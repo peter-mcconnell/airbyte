@@ -123,6 +123,19 @@ class Stream(ABC):
         If the stream has no primary keys, return None.
         """
 
+    @property
+    def loopback_window_days(self) -> int:
+        """
+        :return: Override to define a loopback window in days for incremental updates
+        """
+        return self._loopback_window_days
+
+
+    @loopback_window_days.setter
+    def loopback_window_days(self, value):
+        self._loopback_window_days = value
+
+
     def stream_slices(
         self, sync_mode: SyncMode, cursor_field: List[str] = None, stream_state: Mapping[str, Any] = None
     ) -> Iterable[Optional[Mapping[str, Any]]]:

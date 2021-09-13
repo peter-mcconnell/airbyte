@@ -27,6 +27,7 @@ import math
 from abc import ABC, abstractmethod
 from typing import Any, Iterable, List, Mapping, MutableMapping, Optional, Tuple
 
+import pendulum
 import requests
 import stripe
 from airbyte_cdk import AirbyteLogger
@@ -41,9 +42,10 @@ class StripeStream(HttpStream, ABC):
     url_base = "https://api.stripe.com/v1/"
     primary_key = "id"
 
-    def __init__(self, account_id: str, **kwargs):
+    def __init__(self, account_id: str, loopback_window_days: int, **kwargs):
         super().__init__(**kwargs)
         self.account_id = account_id
+        self.loopback_window_days = loopback_window_days
 
     def next_page_token(self, response: requests.Response) -> Optional[Mapping[str, Any]]:
         decoded_response = response.json()
@@ -101,7 +103,13 @@ class IncrementalStripeStream(StripeStream, ABC):
     def request_params(self, stream_state=None, **kwargs):
         stream_state = stream_state or {}
         params = super().request_params(stream_state=stream_state, **kwargs)
-        params["created[gte]"] = stream_state.get(self.cursor_field)
+        if self.loopback_window_days:
+            self.logger.info(f"Applying loopback window of {self.loopback_window_days} days to stream {self.name}")
+            params["created[gte]"] = int(
+                pendulum.from_timestamp(stream_state.get(self.cursor_field)).subtract(days=abs(self.loopback_window_days)).timestamp()
+            )
+        else:
+            params["created[gte]"] = stream_state.get(self.cursor_field) - self.loopback_window_days
         return params
 
 
@@ -283,7 +291,11 @@ class SourceStripe(AbstractSource):
 
     def streams(self, config: Mapping[str, Any]) -> List[Stream]:
         authenticator = TokenAuthenticator(config["client_secret"])
-        args = {"authenticator": authenticator, "account_id": config["account_id"]}
+        args = {
+            "authenticator": authenticator,
+            "account_id": config["account_id"],
+            "loopback_window_days": config.get("loopback_window_days"),
+        }
         return [
             BankAccounts(**args),
             BalanceTransactions(**args),
