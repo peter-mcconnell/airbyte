@@ -103,14 +103,19 @@ class IncrementalStripeStream(StripeStream, ABC):
     def request_params(self, stream_state=None, **kwargs):
         stream_state = stream_state or {}
         params = super().request_params(stream_state=stream_state, **kwargs)
+        start_timestamp = self.get_start_timestamp(stream_state)
+        params["created[gte]"] = start_timestamp
+        return params
+
+    def get_start_timestamp(self, stream_state):
         if self.loopback_window_days:
             self.logger.info(f"Applying loopback window of {self.loopback_window_days} days to stream {self.name}")
-            params["created[gte]"] = int(
+            start_timestamp = int(
                 pendulum.from_timestamp(stream_state.get(self.cursor_field)).subtract(days=abs(self.loopback_window_days)).timestamp()
             )
         else:
-            params["created[gte]"] = stream_state.get(self.cursor_field) - self.loopback_window_days
-        return params
+            start_timestamp = stream_state.get(self.cursor_field)
+        return start_timestamp
 
 
 class Customers(IncrementalStripeStream):
